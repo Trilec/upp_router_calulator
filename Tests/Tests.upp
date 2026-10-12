@@ -1,0 +1,4 @@
+description "Router Calculator deterministic core tests";
+uses Core, RouterCalcCore;
+file Main.cpp, StavesTests.cpp;
+mainconfig "" = "CONSOLE";

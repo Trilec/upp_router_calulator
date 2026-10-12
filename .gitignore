@@ -66,3 +66,15 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Local releases and personal workshop data
+/bin/
+/Bin/
+/GitHub.var
+*.designs.json
+*.staves.json
+*.preferences.json
+
+# Klick recovery evidence stays local; never delete to bypass recovery
+.klick-patch/
+.klick-patch.lock

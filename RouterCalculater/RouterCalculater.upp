@@ -1,0 +1,7 @@
+description "UPP Router Calculator - native workshop utility";
+uses Core, CtrlLib, Painter, Ui, RouterCalcCore, plugin/png;
+file
+    App.h, Graphics.cpp, Theme.cpp, App.cpp, CircleLayout.cpp,
+    StavePage.h, StavePage.cpp, StaveLayout.cpp, StaveSvg.cpp,
+    Window.h, Window.cpp, UiTests.cpp, Main.cpp;
+mainconfig "" = "GUI";

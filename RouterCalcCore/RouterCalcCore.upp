@@ -1,0 +1,3 @@
+description "Router circle geometry and portable design library";
+uses Core;
+file RouterCalcCore.h, RouterCalcCore.cpp, Staves.h, Staves.cpp, StaveExport.cpp;
