@@ -8,8 +8,11 @@ StaveGeometry CalculateStaves(const StaveInput& x)
 {
     StaveGeometry g;
     for(double v:{x.outerRadiusMm,x.wallMm,x.depthMm,x.outsideAllowanceMm,x.insideAllowanceMm,x.spacerThicknessMm,x.topTrimMm,x.bottomTrimMm,x.basePlateMm,x.reachGapMm,x.endKerfMm})
-        if(IsNull(v)||!std::isfinite(v)||v<0||v>10000){g.error="Use finite dimensions from 0 to 10,000 mm.";return g;}
-    if(x.outerRadiusMm<=0||x.wallMm<=0||x.wallMm>=x.outerRadiusMm||x.depthMm<=0){g.error="Outside radius and depth must be positive; wall thickness must be smaller than the radius.";return g;}
+        if(IsNull(v)||!std::isfinite(v)||v<0){g.error="Lengths and allowances must be finite and non-negative.";return g;}
+    if(x.outerRadiusMm<=0){g.error="Finished outside size must be greater than zero.";return g;}
+    if(x.depthMm<=0){g.error="Finished depth must be greater than zero.";return g;}
+    if(x.wallMm<=0){g.error="Wall thickness must be greater than zero.";return g;}
+    if(x.wallMm>=x.outerRadiusMm){g.error="Wall thickness leaves no bore. It must be less than outside R "+Number(x.outerRadiusMm)+" mm.";return g;}
     if(x.count<3||x.count>512){g.error="Use 3 to 512 main staves. Spacer strips are not additional angular divisions.";return g;}
     g.innerRadiusMm=x.outerRadiusMm-x.wallMm;
     double inner_limit=g.innerRadiusMm-x.insideAllowanceMm;
@@ -23,6 +26,7 @@ StaveGeometry CalculateStaves(const StaveInput& x)
     g.finishedTopZMm=g.finishedBottomZMm+x.depthMm;
     g.blankLengthMm=g.finishedTopZMm+x.topTrimMm;
     g.assemblyHeightMm=g.blankLengthMm+x.basePlateMm;
+    if(g.innerRadiusMm>=x.outerRadiusMm||!std::isfinite(g.assemblyHeightMm)||!std::isfinite(g.outerApothemMm*2)||!std::isfinite(x.count*(g.blankLengthMm+x.endKerfMm))){g.error="These dimensions exceed the available numeric precision or range.";return g;}
     Vector<int> joints;joints.SetCount(x.count,0);
     if(x.spacerThicknessMm>0){
         if(TrimBoth(x.selectedJoints).IsEmpty()&&(x.spacerEvery<1||x.spacerEvery>x.count)){g.error="Spacer cadence must be from 1 to the main stave count.";return g;}
@@ -39,7 +43,7 @@ StaveGeometry CalculateStaves(const StaveInput& x)
         double right=joints[i]?x.spacerThicknessMm:0;
         double deduction=(left+right)/(2*c);
         double outer=2*g.outerApothemMm*t-deduction,inner=2*g.innerApothemMm*t-deduction;
-        if(inner<=1e-8){g.error="Spacer strips consume a stave's inner face. Use thinner/fewer strips or fewer staves.";g.staves.Clear();g.spacers.Clear();return g;}
+        if(inner<=0||!std::isfinite(outer)||!std::isfinite(inner)){g.error="Spacer strips consume a stave's inner face. Use thinner/fewer strips or fewer staves.";g.staves.Clear();g.spacers.Clear();return g;}
         StavePiece& p=g.staves.Add();p.index=i+1;p.leftSpacerMm=left;p.rightSpacerMm=right;
         p.outerWidthMm=outer;p.innerWidthMm=inner;p.centreOffsetMm=(left-right)/(4*c);
         double a=2*alpha*i,A=g.outerApothemMm,B=g.innerApothemMm;

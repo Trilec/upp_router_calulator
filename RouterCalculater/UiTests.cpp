@@ -9,6 +9,34 @@ int StaveCanvas::SelfTest(const String& folder)
     auto eq=[](double a,double b){return std::abs(a-b)<1e-8;};
     check(geometry.IsValid()&&eq(geometry.bevelDegrees,9),"20-stave default bevel");
     check(kind=="diameter"&&eq(fields[OUTER].GetValue(),350),"drums default to outside diameter");
+    SetRect(0,0,DPI(920),DPI(ContentHeight()));Layout();ChangeUnit("cm");
+    for(int d:{30,40,50,60}){fields[OUTER].SetValue(d);fields[OUTER].WhenChange();check(geometry.IsValid()&&eq(input.outerRadiusMm,d*5)&&eq(geometry.innerRadiusMm,d*5-10),"30/40/50/60 cm outside diameter");}
+    ChangeUnit("mm");fields[OUTER].SetTextUtf8("40cm");fields[OUTER].WhenChange();check(geometry.IsValid()&&eq(input.outerRadiusMm,200),"explicit cm suffix in mm display");
+    int good_raster=preview.RenderCount();fields[WALL].SetTextUtf8("40cm");fields[WALL].WhenChange();
+    check(!geometry.IsValid()&&fields[WALL].HasIssue()&&preview.IsRetainingInvalid()&&preview.RenderCount()==good_raster,"oversized radial wall retains preview and marks wall");
+    radius.WhenAction();check(eq(fields[OUTER].GetValue(),200)&&!geometry.IsValid(),"radius switch allowed with invalid wall");
+    ChangeUnit("cm");check(eq(fields[OUTER].GetValue(),20)&&eq(fields[WALL].GetValue(),40),"unit conversion allowed with invalid wall");
+    diameter.WhenAction();fields[WALL].SetValue(1);fields[WALL].WhenChange();check(geometry.IsValid()&&!preview.IsRetainingInvalid()&&eq(geometry.innerRadiusMm,190),"correction restores 40 cm shell");
+    fields[OUTER].MouseWheel(Point(5,5),120,0);check(eq(fields[OUTER].GetValue(),40.1),"wheel step 0.1 cm");
+    fields[OUTER].MouseWheel(Point(5,5),120,K_ALT);check(eq(fields[OUTER].GetValue(),41.1),"Alt wheel step 1 cm");
+    fields[OUTER].MouseWheel(Point(5,5),120,K_SHIFT);check(eq(fields[OUTER].GetValue(),51.1),"Shift wheel step 10 cm");
+    fields[COUNT].MouseWheel(Point(5,5),120,0);check(input.count==21,"stave wheel remains integral");
+    fields[WALL].Clear();fields[WALL].WhenChange();ChangeUnit("mm");check(fields[WALL].IsEmpty()&&eq(fields[OUTER].GetValue(),511),"incomplete field preserved during conversion");
+    fields[WALL].SetValue(10);fields[WALL].WhenChange();fields[OUTER].SetValue(22.05);fields[OUTER].WhenChange();
+    fields[OUTER].MouseWheel(Point(5,5),-120,0);check(geometry.IsValid()&&eq(fields[OUTER].GetValue(),22.05)&&fields[OUTER].HasIssue(),"wheel stops before bore allowance is consumed");
+    New(false);ChangeUnit("mm");
+    double range=outside_slider.GetMax();outside_slider.SetValue(400);outside_slider.WhenChanging();
+    check(geometry.IsValid()&&eq(input.outerRadiusMm,200)&&eq(fields[OUTER].GetValue(),400),"outside slider drives diameter and geometry");
+    int raster=preview.RenderCount();outside_slider.WhenAction();check(preview.RenderCount()==raster,"slider commit does not repeat changed preview");
+    outside_slider.SetValue(450);outside_slider.WhenChanging();check(eq(outside_slider.GetMax(),range),"outside range stays fixed during drag");
+    radius.WhenAction();ChangeUnit("cm");outside_slider.SetValue(500);outside_slider.WhenChanging();
+    check(eq(fields[OUTER].GetValue(),25)&&eq(input.outerRadiusMm,250),"outside slider preserves radius and cm semantics");
+    count_slider.SetValue(24);count_slider.WhenChanging();check(input.count==24&&eq(geometry.bevelDegrees,7.5),"native stave count slider drives bevel");
+    fields[COUNT].SetValue(100);fields[COUNT].WhenChange();check(eq(count_slider.GetValue(),100)&&count_slider.GetMax()>=100,"typed count expands count slider");
+    fields[OUTER].SetValue(100);fields[OUTER].WhenChange();check(eq(outside_slider.GetValue(),2000)&&outside_slider.GetMax()>=2000,"typed large radius expands physical slider");
+    outside_slider.SetValue(1);outside_slider.WhenChanging();check(geometry.IsValid()&&eq(input.outerRadiusMm,1000)&&fields[OUTER].HasIssue(),"outside slider rejects impossible shell without erasing it");
+    int height=ContentHeight();formula_more.WhenAction();check(ContentHeight()>height,"drum explanation expands");formula_more.WhenAction();check(ContentHeight()==height,"drum explanation collapses");
+    New(false);ChangeUnit("mm");ChangeKind("diameter");
     fields[OUTER].SetTextUtf8("1000");fields[OUTER].WhenChange();
     check(eq(input.outerRadiusMm,500)&&eq(geometry.innerRadiusMm,490),"one-metre drum input");
     radius.WhenAction();check(eq(fields[OUTER].GetValue(),500),"radius switch preserves outside size");
@@ -51,6 +79,11 @@ int StaveCanvas::SelfTest(const String& folder)
         SetDark(dark);ApplyTheme();
         for(int width:{920,1320}){
             SetRect(0,0,DPI(width),DPI(ContentHeight()));Layout();
+            check(fields[TOP_TRIM].GetRect().top==fields[BOTTOM_TRIM].GetRect().top&&fields[DEPTH].GetRect().top==fields[TOP_TRIM].GetRect().top,"depth and both trims share one row");
+            check(fields[PLATE].GetRect().top==fields[REACH_GAP].GetRect().top&&fields[KERF].GetRect().top==fields[PLATE].GetRect().top,"mounting dimensions share second row");
+            check(saved.GetScreenRect().bottom<fields[OUTER].GetScreenRect().top,"saved designs precede measurements");
+            check(outside_slider.GetSize().cx>0&&count_slider.GetSize().cx>0&&cut_table.GetSize().cy>=DPI(132),"sliders laid out and all five cut groups have room");
+            check(ContentHeight()<=740,"collapsed drum page stays compact");
             check(Rect(GetSize()).Contains(export_file.GetRect())&&Rect(GetSize()).Contains(preview.GetRect()),"stave controls stay inside content");
             int renders=preview.RenderCount();Layout();Read();
             check(preview.RenderCount()==renders,"identical layout and input do not rerasterise");
@@ -69,6 +102,9 @@ int RouterWindow::SelfTest(const String& folder)
     int failed=circle.canvas.SelfTest(folder)+staves.canvas.SelfTest(folder),passed=0;String report;
     auto check=[&](bool ok,const char* label){if(ok)++passed;else{++failed;report<<"FAIL: "<<label<<"\n";}};
     check(tabs.GetCount()==2,"circle and drum tabs are registered");
+    check(version.GetText().Find(APP_VERSION)>=0,"visible badge uses central application version");
+    check(version.GetText().Find(APP_CONFIGURATION)>=0,"visible badge identifies debug or release");
+    check(!version.GetRect().Intersects(heading.GetRect())&&!version.GetRect().Intersects(mm.GetRect()),"version badge does not overlap header controls");
     for(bool dark:{true,false}){
         SetDark(dark);ApplyTheme();
         for(int active:{0,1}){
@@ -79,17 +115,21 @@ int RouterWindow::SelfTest(const String& folder)
             check(PNGEncoder().SaveFile(AppendFileName(folder,file),draw),"window screenshot");
         }
     }
-    SvgView cache;cache.SetRect(0,0,DPI(600),DPI(300));
-    String source=CircleSvg(RouterCalc::Calculate(RouterCalc::Inputs()),"mm",true,true,true);
-    cache.SetSource(source);cache.Layout();int initial=cache.RenderCount();
+    DiagramView cache;cache.SetRect(0,0,DPI(600),DPI(300));
+    auto source=[](){return CircleDiagram(RouterCalc::Calculate(RouterCalc::Inputs()),"mm",true,true,true);};
+    cache.SetScene(source());cache.Layout();int initial=cache.RenderCount();
     auto begin=std::chrono::steady_clock::now();
-    for(int i=0;i<1000;i++){cache.SetSource(source);cache.Layout();}
+    for(int i=0;i<1000;i++){cache.SetScene(source());cache.Layout();}
     double millis=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
-    check(cache.RenderCount()==initial,"1000 unchanged SVG updates produce zero rerenders");
+    check(cache.RenderCount()==initial,"1000 unchanged native scene updates produce zero rerenders");
     SetDark(!IsDark());cache.Layout();check(cache.RenderCount()==initial+1,"theme change invalidates raster once");
+    initial=cache.RenderCount();cache.SetScene(CircleDiagram(RouterCalc::Calculate(RouterCalc::Inputs()),"cm",true,true,true));check(cache.RenderCount()==initial,"unit-label change does not redraw curves");
+    Size pixels=cache.Raster().GetSize();RouterCalc::Inputs huge;huge.holeRadiusMm=100000;cache.SetScene(CircleDiagram(RouterCalc::Calculate(huge),"mm",true,true,true));check(cache.Raster().GetSize()==pixels,"large real-world dimension does not enlarge image buffer");
+    UnitEdit value;double n;value.SetTextUtf8("40 cm");check(value.TryGetValue(n)&&std::abs(n-400)<1e-9,"unit editor suffix conversion");value.ConvertUnit("cm");check(std::abs(value.GetValue()-40)<1e-9,"unit editor physical value preserved");
+    value.SetTextUtf8("1e");check(!value.TryGetValue(n),"incomplete exponent rejected");value.SetValue(30);value.MouseWheel(Point(0,0),60,0);check(std::abs(value.GetValue()-30)<1e-9,"partial wheel notch is accumulated");value.MouseWheel(Point(0,0),60,0);check(std::abs(value.GetValue()-30.1)<1e-9,"two half-notches produce one step");
     SetDark(true);ApplyTheme();tabs.SetActiveTab(0);UpdateUnits();
     report<<"WindowUi: "<<passed<<" passed; total GUI failures "<<failed<<"\n";
-    report<<"1000 unchanged SVG source/layout updates: "<<RouterCalc::Number(millis)<<" ms; raster rebuilds: 0\n";
+    report<<"1000 unchanged native scene source/layout updates: "<<RouterCalc::Number(millis)<<" ms; raster rebuilds: 0\n";
     Cout()<<report;SaveFile(AppendFileName(folder,"window-ui-results.txt"),report);return failed;
 }
 } }

@@ -16,7 +16,7 @@ CONSOLE_APP_MAIN
     x.holeRadiusMm = 4; g = Calculate(x); test(g.IsValid() && g.pathR == 0 && g.templateR == 80.5, "zero travel boundary");
     x.holeRadiusMm = 3.999; test(!Calculate(x).IsValid(), "hole smaller than cutter");
     x = Inputs(); x.guideDiameterMm = 8; test(!Calculate(x).IsValid(), "guide equal to cutter");
-    for(double n : {0.0, -1.0, 10001.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+    for(double n : {0.0, -1.0, std::numeric_limits<double>::lowest(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         x = Inputs(); x.holeRadiusMm = n; test(!Calculate(x).IsValid(), "invalid hole input");
         x = Inputs(); x.guideDiameterMm = n; test(!Calculate(x).IsValid(), "invalid guide input");
         x = Inputs(); x.cutterDiameterMm = n; test(!Calculate(x).IsValid(), "invalid cutter input");
@@ -54,6 +54,7 @@ CONSOLE_APP_MAIN
     SaveFile(path, "external change");
     test(!WriteLibrary(path, library, expected, exists, error) && LoadFile(path) == "external change", "external edit protection");
     FileDelete(path); FileDelete(path + ".bak");
+    Inputs large;large.holeRadiusMm=10001;test(Calculate(large).IsValid(),"no arbitrary ten-metre circle limit");large.holeRadiusMm=std::numeric_limits<double>::max();test(!Calculate(large).IsValid(),"true diameter overflow rejected");
     Cout() << "RouterCalcCore: " << passed << " passed, " << failed << " failed\n";
     failed += RunStaveTests();
     SetExitCode(failed ? 1 : 0);

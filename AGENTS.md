@@ -6,7 +6,9 @@ Keep existing package/nest names, including `RouterCalculater`, unless a rename 
 
 Release output is always `bin/RouterCalculator.exe`; overwrite that latest app, never the adjacent user JSON libraries. All Release executables belong in bin. Debug builds, caches and validation captures belong in build. Do not stop unrelated running executables to replace a locked debug file.
 
-Keep the preview fixed-height. No calculation or SVG parsing in Paint; no idle redraw clock. Preserve radius/diameter and mm/cm invariants, incomplete-input handling, unsaved-change prompts and both themes. Run the core and GUI tests, plus a non-BLITZ build, after changes.
+Keep the preview fixed-height. Forms/readouts/tables/dialogs are native Ui controls; diagrams use direct Painter/Draw. No SVG pipeline, calculations, layout work or idle redraw clock in Paint. Preserve the exact-size cached panel skins; the installed rounded and nine-slice fallback paths are expensive during repaint. Preserve radius/diameter and mm/cm invariants, incomplete-input handling, unsaved-change prompts and both themes. Run the core and GUI tests, plus a non-BLITZ build, after changes.
+
+Validate changed-input responsiveness with `--audit`, including wheel and slider handlers; report p95/max, build mode, DPI, and timing misses separately from functional test passes. Do not claim 60 fps based on unchanged cache calls. Preserve incomplete drafts, explicit units and the labelled last-valid preview. Outside size and radial wall thickness are different inputs.
 
 Do not describe a successful compilation as a test run. Geometry JSON is not machine-ready. Keep limitations explicit.
 

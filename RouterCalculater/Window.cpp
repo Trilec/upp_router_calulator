@@ -4,8 +4,9 @@ static int WLogical(int px) { return int(px*100.0/DPI(100)+.5); }
 static void WPlace(Ctrl& c,int x,int y,int w,int h) { c.SetRect(DPI(x),DPI(y),DPI(w),DPI(h)); }
 RouterWindow::RouterWindow(bool load_disk):circle(load_disk),staves(load_disk),persist_preferences(load_disk)
 {
-    Title("UPP Router Calculator");Sizeable().Zoomable();
-    SetMinSize(Size(DPI(980),DPI(600)));SetRect(0,0,DPI(1320),DPI(900));
+    Title(AppIdentity());
+    Sizeable().Zoomable();
+    SetMinSize(Size(DPI(980),DPI(600)));SetRect(0,0,DPI(1120),DPI(850));
     preferences_path=AppendFileName(GetExeFolder(),"router_calculator.preferences.json");
     if(load_disk&&FileExists(preferences_path)) {
         preferences_exist=true;
@@ -20,12 +21,15 @@ RouterWindow::RouterWindow(bool load_disk):circle(load_disk),staves(load_disk),p
     tabs.Add(circle,"Calculate router circle");tabs.Add(staves,"Drum staves");
     tabs.EnableCloseButtons(false).EnableDragHandles(false).EnableDragReorder(false);
     Add(tabs);Add(mm);Add(cm);Add(theme);Add(mark);
+    Add(heading);Add(subtitle);heading.SetText("Router Calculator");subtitle.SetText("Workshop geometry. Fewer surprises in the timber.");
+    Add(version);version.SetText(String("v")+APP_VERSION+" · "+APP_CONFIGURATION);
+    version.Tip(AppIdentity()+"\nRunning executable: "+GetExeFilePath()+"\nDirect Painter/Draw diagrams; no SVG generation.");
     mm.WhenAction=[this]{ChangeUnit("mm");};cm.WhenAction=[this]{ChangeUnit("cm");};
     theme.WhenAction=[this]{SetDark(!IsDark());ApplyTheme();SavePreferences();};
     theme.Tip("Switch dark / light theme. Your choice is stored beside the executable.");
     circle.canvas.WhenDisplay=[this]{UpdateUnits();};staves.canvas.WhenDisplay=[this]{UpdateUnits();};
     tabs.WhenAction=[this]{UpdateUnits();};
-    mark.SetSource("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"52\" height=\"52\" viewBox=\"0 0 52 52\"><circle cx=\"26\" cy=\"26\" r=\"23\" fill=\"none\" stroke=\"#e6b972\" stroke-width=\"1.5\"/><circle cx=\"26\" cy=\"26\" r=\"11\" fill=\"none\" stroke=\"#80d6bb\"/><circle cx=\"33\" cy=\"26\" r=\"16\" fill=\"#91b8db\" fill-opacity=\".1\" stroke=\"#91b8db\"/><circle cx=\"33\" cy=\"26\" r=\"4\" fill=\"#f09987\"/></svg>");
+    DiagramScene logo;logo.extent=Sizef(52,52);logo.Circle(26,26,23,"#e6b972","none",1.5);logo.Circle(26,26,11,"#80d6bb");logo.Circle(33,26,16,"#91b8db","#91b8db",1,.1);logo.Circle(33,26,4,"none","#f09987");mark.SetScene(pick(logo));
     ApplyTheme();
     WhenClose=[this]{if(circle.canvas.AllowDiscard()&&staves.canvas.AllowDiscard()){SavePreferences();Close();}};
 }
@@ -42,7 +46,19 @@ void RouterWindow::ChangeUnit(const String& unit)
 }
 void RouterWindow::ApplyTheme()
 {
-    UiTab::Style s=UiTab::StyleDefault();s.tab_font=TextFont(12);s.tab_extent=DPI(34);s.body_gap=DPI(12);s.visual=UITAB_UNDERLINE;
+    StyleNativeLabel(heading,22,"#ecede8",false,true);StyleNativeLabel(subtitle,11,"#9ca8aa");
+    UiLabel::Style badge=UiLabel::StyleDefault();badge.font=TextFont(11,false,true);
+    badge.transparent=false;badge.nowrap=true;badge.align_h=badge.align_v=UiAlign::CENTER;
+    badge.metrics.radius=DPI(11);badge.metrics.frame_width=DPI(1);badge.metrics.shadow.enabled=false;
+    badge.metrics.face_enabled=badge.metrics.frame_enabled=true;
+    badge.metrics.content_margin=Rect(DPI(8),DPI(2),DPI(8),DPI(2));
+    for(int i=0;i<4;i++){
+        badge.palette.face[i]=IsDark()?Color(39,61,51):Color(220,237,226);
+        badge.palette.ink[i]=IsDark()?Color(209,236,221):Color(37,85,59);
+        badge.palette.frame[i]=IsDark()?Color(74,110,88):Color(166,196,178);
+    }
+    version.SetCustomStyle(badge);
+    UiTab::Style s=UiTab::StyleDefault();s.tab_font=TextFont(12);s.tab_extent=DPI(30);s.body_gap=DPI(8);s.visual=UITAB_UNDERLINE;
     s.metrics.frame_enabled=false;s.metrics.radius=0;s.metrics.content_margin=Rect(0,0,0,0);s.metrics.shadow.enabled=false;
     s.tab_metrics.radius=0;s.tab_metrics.shadow.enabled=false;s.active_frame_color=Amber();s.indicator_thickness=DPI(2);s.expand_tabs=false;
     for(int i=0;i<4;i++){s.palette.face[i]=Bg();s.palette.ink[i]=Ink();s.tab_palette.face[i]=Bg();s.tab_palette.ink[i]=Amber();s.tab_palette.frame[i]=Amber();}
@@ -61,13 +77,13 @@ void RouterWindow::Layout()
 {
     int width=WLogical(GetSize().cx),height=WLogical(GetSize().cy),content=min(1340,width-32),left=(width-content)/2;
     WPlace(mark,left,12,36,36);WPlace(mm,left+content-216,16,42,28);WPlace(cm,left+content-170,16,42,28);WPlace(theme,left+content-116,16,116,28);
-    WPlace(tabs,left,59,content,max(1,height-71));
+    WPlace(heading,left+47,9,240,27);WPlace(subtitle,left+47,35,content-290,17);
+    WPlace(version,left+300,11,156,25);
+    WPlace(tabs,left,52,content,max(1,height-60));
 }
 void RouterWindow::Paint(Draw& w)
 {
-    w.DrawRect(GetSize(),Bg());int width=WLogical(GetSize().cx),content=min(1340,width-32),left=(width-content)/2;
-    TextAt(w,left+47,10,"Router Calculator",22,Ink(),false,true);
-    TextAt(w,left+47,36,"Workshop geometry. Fewer surprises in the timber.",11,Muted());
+    w.DrawRect(GetSize(),Bg());
 }
 bool RouterWindow::Key(dword key,int count)
 {

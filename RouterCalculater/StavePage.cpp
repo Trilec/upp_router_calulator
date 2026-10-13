@@ -5,9 +5,11 @@ using RouterCalc::Number;
 String StaveCanvas::M(double value) const { return Number(value/Factor())+" "+unit; }
 StaveCanvas::StaveCanvas(bool load_disk)
 {
+    form.Init(*this);Add(cut_table);Vector<String> headers;headers<<"Part group"<<"Qty"<<"Outer"<<"Inner"<<"Stock"<<"Bevel";InitReadoutTable(cut_table,0,headers);
     library=RouterCalc::NewStaveLibrary();path=AppendFileName(GetExeFolder(),"router_calculator.staves.json");
-    for(auto& f:fields){Add(f);f.ShowSpin(false).Precision(5);f.WhenChange=[this]{if(!syncing)Read();};f.WhenAction=[this]{if(!syncing)Read();};}
-    fields[COUNT].Step(1);fields[EVERY].Step(1);
+    InitSliders();Add(formula_more);
+    formula_more.WhenAction=[this]{expanded_formula=!expanded_formula;formula_more.SetText(expanded_formula?"▾ Calculation details":"▸ Calculation details");WhenExtent();};
+    for(int i=0;i<FIELD_COUNT;i++){auto& f=fields[i];Add(f);f.ShowSpin(false);f.WholeNumbers(i==COUNT||i==EVERY);f.WhenChange=f.WhenAction=[this,i]{if(!syncing){last_edited=i;Read();}};f.WhenStep=[this,i](double v){return CanStep(i,v);};}
     fields[OUTER].Tip("Finished outside size, excluding the material reserved for milling.");
     fields[COUNT].Tip("Number of main staves. Straight spacer strips do not add angular divisions.");
     fields[WALL].Tip("Finished radial wall thickness. Outside radius minus inside radius.");
@@ -19,11 +21,11 @@ StaveCanvas::StaveCanvas(bool load_disk)
     fields[KERF].Tip("One separating end cut per length, after squaring the stock. Stock estimate only; never subtracted from glued dimensions.");
     fields[SPACER].Tip("Thickness normal to the parallel strip faces. Zero means no strips. These are straight-cut, not wedge-shaped.");
     fields[EVERY].Tip("Insert a strip after every Nth stave. A selected-joint list overrides this cadence.");
-    Add(joints);joints.SetPlaceholder("Optional: 3,6,9 — overrides cadence");joints.WhenChange=[this]{if(!syncing)Read();};
+    Add(joints);joints.SetPlaceholder("3,6,9");joints.Tip("Optional comma-separated joints. Overrides every-Nth cadence; joint N closes the ring.");joints.WhenChange=[this]{if(!syncing)Read();};
     Add(name);Add(notes);name.SetPlaceholder("Design name");notes.SetPlaceholder("Fixture, timber or cutter notes");
-    name.WhenChange=notes.WhenChange=[this]{if(!syncing){dirty=true;status="Unsaved changes";Refresh();}};
+    name.WhenChange=notes.WhenChange=[this]{if(!syncing){dirty=true;status="Unsaved changes";UpdateReadouts();}};
     Add(saved);saved.SetPlaceholderText("No saved shell designs");saved.WhenSelect=[this](int i){if(!syncing&&i>=0)LoadDesign(i);};
-    Add(inspect);inspect.WhenSelect=[this](int i){if(!syncing&&i>=0&&geometry.IsValid()){selected=i;preview.SetSource(StaveSvg(input,geometry,unit,selected));Refresh();}};
+    Add(inspect);inspect.WhenSelect=[this](int i){if(!syncing&&i>=0&&geometry.IsValid()){selected=i;preview.SetScene(StaveDiagram(input,geometry,unit,selected));UpdateReadouts();}};
     for(UiButton* b:{&radius,&diameter,&create,&save,&settings,&export_file})Add(*b);
     radius.WhenAction=[this]{ChangeKind("radius");};diameter.WhenAction=[this]{ChangeKind("diameter");};create.WhenAction=[this]{New();};
     save.WhenAction=[this]{Save();};settings.WhenAction=[this]{Settings();};export_file.WhenAction=[this]{Export();};Add(preview);
@@ -33,59 +35,87 @@ StaveCanvas::StaveCanvas(bool load_disk)
 void StaveCanvas::ApplyTheme()
 {
     int theme=IsDark()?1:0;if(applied_theme==theme)return;applied_theme=theme;
-    for(auto& f:fields)StyleEdit(f,18);StyleEdit(fields[OUTER],22);StyleEdit(joints);StyleEdit(name);StyleEdit(notes);
+    for(auto& f:fields)StyleEdit(f,16);StyleEdit(fields[OUTER],20);StyleEdit(joints);StyleEdit(name);StyleEdit(notes);
+    StyleSlider(outside_slider,Amber());StyleSlider(count_slider,Teal());count_slider.SetStep(1);
+    StyleButton(formula_more,expanded_formula?"▾ Calculation details":"▸ Calculation details");formula_more.SetFrameWidth(0);
     StyleDropdown(saved);StyleDropdown(inspect);StyleButton(radius,"Radius",kind=="radius");StyleButton(diameter,"Diameter",kind=="diameter");StyleButton(create,"+ New");
     StylePrimary(save,"Save");StyleButton(settings,"Settings");StyleButton(export_file,"Export");
-    left_back=result_back=preview_back=list_back=Image();Layout();preview.Layout();Refresh();
+    form.ApplyTheme();StyleNativeTable(cut_table);Layout();preview.Layout();UpdateReadouts();
 }
 void StaveCanvas::Sync()
 {
     syncing=true;
+    for(auto& f:fields)f.DisplayUnit(unit);
     double a[]={input.outerRadiusMm*(kind=="diameter"?2:1),double(input.count),input.wallMm,input.outsideAllowanceMm,input.insideAllowanceMm,input.depthMm,input.topTrimMm,input.reachGapMm,input.bottomTrimMm,input.basePlateMm,input.endKerfMm,input.spacerThicknessMm,double(input.spacerEvery)};
     for(int i=0;i<FIELD_COUNT;i++){double v=a[i]/((i==COUNT||i==EVERY)?1:Factor()),old;if(!fields[i].TryGetValue(old)||old!=v)fields[i].SetValue(v);}
     if(joints.GetTextUtf8()!=input.selectedJoints)joints.SetTextUtf8(input.selectedJoints);
+    SyncSliders();
     syncing=false;WhenDisplay();
 }
-void StaveCanvas::Read()
+void StaveCanvas::Read(bool force)
 {
-    double a[FIELD_COUNT];String problem;
-    for(int i=0;i<FIELD_COUNT;i++)if(!fields[i].TryGetValue(a[i])||!std::isfinite(a[i])||IsNull(a[i])){problem="Complete every measurement with a finite number.";break;}
-    if(problem.IsEmpty())for(int i:{COUNT,EVERY})if(a[i]!=std::floor(a[i])||a[i]<1||a[i]>512)problem="Counts and cadence must be whole numbers from 1 to 512.";
-    if(!problem.IsEmpty()){
-        geometry=RouterCalc::StaveGeometry();geometry.error=problem;groups.Clear();save.Disable();export_file.Disable();inspect.Disable();dirty=true;status=problem;preview.SetSource(StaveSvg(input,geometry,unit,selected));Refresh();return;
+    double a[FIELD_COUNT];
+    const char* names[]={"Finished outside size","Stave count","Wall thickness","Outside padding","Inside padding","Finished depth","Top trim","Router end gap","Bottom trim","Base plate thickness","End-cut kerf","Strip thickness","Joint cadence"};
+    for(int i=0;i<FIELD_COUNT;i++){
+        bool cadence=i==EVERY;
+        if(cadence&&(a[SPACER]<=0||!TrimBoth(joints.GetTextUtf8()).IsEmpty())){a[i]=input.spacerEvery;continue;}
+        if(!fields[i].TryGetValue(a[i])||!std::isfinite(a[i])||IsNull(a[i])){Invalid(String(names[i])+": enter a complete number.",i);return;}
+        if((i==COUNT||cadence)&&(a[i]!=std::floor(a[i])||a[i]<(i==COUNT?3:1)||a[i]>512)){Invalid(String(names[i])+": use a whole number from "+(i==COUNT?"3":"1")+" to 512.",i);return;}
     }
     for(int i=0;i<FIELD_COUNT;i++)if(i!=COUNT&&i!=EVERY)a[i]*=Factor();
     RouterCalc::StaveInput next;next.outerRadiusMm=a[OUTER]/(kind=="diameter"?2:1);next.count=(int)a[COUNT];next.wallMm=a[WALL];next.outsideAllowanceMm=a[OUT_ALLOW];next.insideAllowanceMm=a[IN_ALLOW];next.depthMm=a[DEPTH];next.topTrimMm=a[TOP_TRIM];next.reachGapMm=a[REACH_GAP];next.bottomTrimMm=a[BOTTOM_TRIM];next.basePlateMm=a[PLATE];next.endKerfMm=a[KERF];next.spacerThicknessMm=a[SPACER];next.spacerEvery=(int)a[EVERY];next.selectedJoints=joints.GetTextUtf8();
     // Both text-change and committed-action events may fire; identical state does no work.
-    if(geometry.IsValid()&&RouterCalc::StaveParameters(next)==RouterCalc::StaveParameters(input))return;
-    input=next;Recompute();
+    if(!force&&geometry.IsValid()&&RouterCalc::StaveParameters(next)==RouterCalc::StaveParameters(input))return;
+    input=next;SyncSliders();Recompute();
 }
 void StaveCanvas::Recompute(bool changed)
 {
     geometry=RouterCalc::CalculateStaves(input);groups.Clear();if(changed){dirty=true;status="Unsaved changes";}
     bool valid=geometry.IsValid();save.Enable(valid);export_file.Enable(valid);inspect.Enable(valid);
     if(valid){
-        if(selection_count!=input.count){syncing=true;inspect.Clear();for(int i=0;i<input.count;i++)inspect.Add(Format("Inspect stave %d",i+1),i);selected=min(selected,input.count-1);inspect.Select(selected);selection_count=input.count;syncing=false;}
+        if(selection_count!=input.count){syncing=true;{UiModelUpdate bulk(inspect.Model());inspect.Clear();for(int i=0;i<input.count;i++)inspect.Add(Format("Inspect stave %d",i+1),i);}selected=min(selected,input.count-1);inspect.Select(selected);selection_count=input.count;syncing=false;}
         for(const auto& p:geometry.staves){
             String label=p.leftSpacerMm>0?(p.rightSpacerMm>0?"Strip both sides":"Strip on left"):(p.rightSpacerMm>0?"Strip on right":"Plain stave");
             int found=-1;for(int i=0;i<groups.GetCount();i++)if(groups[i].name==label)found=i;
             if(found<0){auto& q=groups.Add();q.name=label;q.outer=p.outerWidthMm;q.inner=p.innerWidthMm;q.depth=geometry.stockThicknessMm;q.bevel=geometry.bevelDegrees;found=groups.GetCount()-1;}groups[found].count++;
         }
         if(geometry.spacers.GetCount()){auto& q=groups.Add();q.name="Straight strip";q.count=geometry.spacers.GetCount();q.outer=q.inner=input.spacerThicknessMm;q.depth=geometry.spacers[0].radialOuterMm-geometry.spacers[0].radialInnerMm;}
-    }else status=geometry.error;
-    fields[EVERY].Enable(input.spacerThicknessMm>0);joints.Enable(input.spacerThicknessMm>0);
-    preview.SetSource(StaveSvg(input,geometry,unit,selected));Refresh();
+    }
+    for(auto& f:fields)f.SetIssue(false);
+    if(valid){preview.SetScene(StaveDiagram(input,geometry,unit,selected));preview.SetInvalid(false);}
+    else {int bad=last_edited;if(input.wallMm>=input.outerRadiusMm)bad=last_edited==OUTER?OUTER:WALL;else if(input.insideAllowanceMm>=input.outerRadiusMm-input.wallMm)bad=last_edited==OUTER||last_edited==WALL?last_edited:IN_ALLOW;status=geometry.error;fields[bad].SetIssue(true);preview.SetInvalid(true);}
+    fields[EVERY].Enable(input.spacerThicknessMm>0&&TrimBoth(input.selectedJoints).IsEmpty());joints.Enable(input.spacerThicknessMm>0);
+    UpdateReadouts();
 }
 void StaveCanvas::ChangeUnit(const String& next)
 {
-    if(next==unit)return;if(!geometry.IsValid()){Error("Complete the measurements before changing units.");return;}unit=next;Sync();Recompute();
+    if(next==unit)return;syncing=true;for(auto& f:fields)f.ConvertUnit(next);unit=next;syncing=false;Read(true);WhenDisplay();
 }
 void StaveCanvas::ChangeKind(const String& next)
 {
-    if(next==kind)return;if(!geometry.IsValid()){Error("Complete the measurements before changing radius/diameter.");return;}
-    kind=next;StyleButton(radius,"Radius",kind=="radius");StyleButton(diameter,"Diameter",kind=="diameter");Sync();Recompute();
+    if(next==kind)return;syncing=true;double v;if(fields[OUTER].TryGetValue(v))fields[OUTER].SetValue(v*(next=="diameter"?2:.5));
+    kind=next;StyleButton(radius,"Radius",kind=="radius");StyleButton(diameter,"Diameter",kind=="diameter");syncing=false;Read(true);
 }
-void StaveCanvas::Error(const String& message,bool modal){status=message;Refresh();if(modal)Exclamation(DeQtf(message));}
+void StaveCanvas::Invalid(const String& error,int field)
+{
+    geometry=RouterCalc::StaveGeometry();geometry.error=error;groups.Clear();save.Disable();export_file.Disable();inspect.Disable();dirty=true;status=error;
+    for(auto& f:fields)f.SetIssue(false);fields[field].SetIssue(true);preview.SetInvalid(true);UpdateReadouts();
+}
+bool StaveCanvas::CanStep(int field,double display)
+{
+    if(!geometry.IsValid())return true;
+    RouterCalc::StaveInput next=input;double v=display*Factor();
+    switch(field){
+    case OUTER:next.outerRadiusMm=v/(kind=="diameter"?2:1);break;case COUNT:next.count=(int)display;break;
+    case WALL:next.wallMm=v;break;case OUT_ALLOW:next.outsideAllowanceMm=v;break;case IN_ALLOW:next.insideAllowanceMm=v;break;
+    case DEPTH:next.depthMm=v;break;case TOP_TRIM:next.topTrimMm=v;break;case REACH_GAP:next.reachGapMm=v;break;
+    case BOTTOM_TRIM:next.bottomTrimMm=v;break;case PLATE:next.basePlateMm=v;break;case KERF:next.endKerfMm=v;break;
+    case SPACER:next.spacerThicknessMm=v;break;case EVERY:next.spacerEvery=(int)display;break;
+    }
+    auto g=RouterCalc::CalculateStaves(next);if(g.IsValid())return true;
+    status="Limit reached: "+g.error;UpdateReadouts();form.Ink("status","#f09987");return false;
+}
+void StaveCanvas::Error(const String& message,bool modal){status=message;UpdateReadouts();if(modal)Exclamation(DeQtf(message));}
 bool StaveCanvas::AllowDiscard(){if(!dirty)return true;int a=PromptYesNoCancel("Save changes to the current stave shell?");return a>=0&&(a==0||Save());}
 void StaveCanvas::New(bool ask)
 {
@@ -93,6 +123,7 @@ void StaveCanvas::New(bool ask)
 }
 void StaveCanvas::RefreshList()
 {
+    UiModelUpdate batch(saved.Model());
     syncing=true;saved.Clear();ValueArray ds=library["designs"];for(int i=0;i<ds.GetCount();i++)saved.Add((String)ds[i]["name"],i);
     if(current>=0&&current<ds.GetCount())saved.Select(current);else saved.ClearSelection();syncing=false;
 }
@@ -120,7 +151,7 @@ bool StaveCanvas::Save(bool modal)
 {
     Value next;int index;String error;
     if(!Stage(next,index,error)||!RouterCalc::WriteJsonFile(path,next,disk_text,disk_exists,error)){Error(error,modal);return false;}
-    library=next;current=index;dirty=false;status="Saved to "+GetFileName(path);RefreshList();Refresh();return true;
+    library=next;current=index;dirty=false;status="Saved to "+GetFileName(path);RefreshList();UpdateReadouts();return true;
 }
 bool StaveCanvas::LoadPath(const String& filename,bool modal)
 {
@@ -130,7 +161,7 @@ bool StaveCanvas::LoadPath(const String& filename,bool modal)
     if(!RouterCalc::ValidateStaveLibrary(next,error)){Error(error,modal);return false;}
     library=next;path=filename;disk_text=text;disk_exists=true;current=-1;dirty=false;RefreshList();
     ValueArray ds=library["designs"];if(ds.GetCount())LoadDesign(ds.GetCount()-1,false);else New(false);
-    status="Opened "+GetFileName(path);Refresh();return true;
+    status="Opened "+GetFileName(path);UpdateReadouts();return true;
 }
 void StaveCanvas::Open()
 {
@@ -139,16 +170,18 @@ void StaveCanvas::Open()
 }
 // Small native chooser; the Export button remains one action in the main page.
 class StaveChoice : public TopWindow {
-    UiButton buttons[5];String heading,detail;int count;
+    UiButton buttons[5];UiLabel title_label,detail_label;String heading,detail;int count;
 public:
     StaveChoice(const String& title,const String& explanation,const Vector<String>& labels):heading(title),detail(explanation),count(labels.GetCount())
     {
         Title(title);SetRect(0,0,DPI(440),DPI(135+count*40));
+        Add(title_label);Add(detail_label);StyleNativeLabel(title_label,21,"#ecede8",false,true);StyleNativeLabel(detail_label,12,"#9ca8aa",false,false,true);
+        String t=heading,d=detail;t.Replace("&","&&");d.Replace("&","&&");title_label.SetText(t);detail_label.SetText(d);
         for(int i=0;i<count;i++){StyleButton(buttons[i],labels[i]);Add(buttons[i]);buttons[i].WhenAction=[this,i]{Break(i+1);};}
         WhenClose=[this]{Break(0);};
     }
-    void Layout() override {for(int i=0;i<count;i++)buttons[i].SetRect(DPI(22),DPI(112+i*40),DPI(396),DPI(32));}
-    void Paint(Draw& w) override {w.DrawRect(GetSize(),Bg());TextAt(w,22,20,heading,21,Ink(),false,true);Wrap(w,22,56,396,detail,12,Muted());}
+    void Layout() override {title_label.SetRect(DPI(22),DPI(20),DPI(396),DPI(28));detail_label.SetRect(DPI(22),DPI(56),DPI(396),DPI(50));for(int i=0;i<count;i++)buttons[i].SetRect(DPI(22),DPI(112+i*40),DPI(396),DPI(32));}
+    void Paint(Draw& w) override {w.DrawRect(GetSize(),Bg());}
     void EnableChoice(int i,bool enabled){buttons[i].Enable(enabled);}
 };
 void StaveCanvas::Settings()
@@ -163,7 +196,7 @@ void StaveCanvas::Settings()
         if(!AllowDiscard()||!PromptYesNo("Delete the selected saved shell? The previous library will remain in .bak."))return;
         ValueArray ds=library["designs"];ds.Remove(current);ValueMap next(library);next.Set("designs",ds);String error;
         if(!RouterCalc::WriteJsonFile(path,next,disk_text,disk_exists,error)){Error(error);return;}
-        library=next;current=-1;RefreshList();New(false);status="Design deleted; backup retained";Refresh();
+        library=next;current=-1;RefreshList();New(false);status="Design deleted; backup retained";UpdateReadouts();
     }
 }
 void StaveCanvas::Export()
@@ -181,6 +214,6 @@ void StaveCanvas::Export()
     }else if(exists)expected=LoadFile(destination);
     if(!RouterCalc::WriteTextFile(destination,text,expected,exists,error)){Error(error);return;}
     if(choice==3){library=next;current=index;path=destination;disk_text=expected;disk_exists=true;dirty=false;RefreshList();}
-    status="Exported "+GetFileName(destination);Refresh();
+    status="Exported "+GetFileName(destination);UpdateReadouts();
 }
 } }

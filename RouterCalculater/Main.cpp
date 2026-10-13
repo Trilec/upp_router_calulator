@@ -5,12 +5,14 @@ GUI_APP_MAIN
 {
     SetDefaultCharset(CHARSET_UTF8);
     const Vector<String>& args=CommandLine();
-    bool testing=args.GetCount()>0&&args[0]=="--self-test";
+    if(args.GetCount()>0&&args[0]=="--version"){Cout()<<AppIdentity()<<"\n"<<GetExeFilePath()<<"\n";return;}
+    bool auditing=args.GetCount()>0&&args[0]=="--audit";
+    bool testing=auditing||(args.GetCount()>0&&args[0]=="--self-test");
     RouterWindow window(!testing);
     if(testing){
         String folder=args.GetCount()>1?args[1]:AppendFileName(GetExeFolder(),"ui-evidence");
         RealizeDirectory(folder);window.Open();Ctrl::ProcessEvents();
-        int failures=window.SelfTest(folder);window.Close();SetExitCode(failures?1:0);return;
+        int failures=auditing?RunPerformanceAudit(window,folder):window.SelfTest(folder);window.Close();SetExitCode(failures?1:0);return;
     }
     window.Run();
 }

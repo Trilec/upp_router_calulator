@@ -1,5 +1,33 @@
 # Validation checkpoint — 12 October 2026
 
+## Current: 0.3.0 / build 2026-10-14.1
+
+The new non-BLITZ **Release compiled and linked directly to `bin/RouterCalculator.exe`**, 5,927,424 bytes. Receipt `exec-28408D844FDB7351FF9F93777496102F` completed 14 October 2026 at 10:30:18 machine-local time, exit 0. The native version badge identifies 0.3.0 and Release; hovering reports the build and path. This supersedes the old bin build described below.
+
+Current Debug runtime evidence: **921 core checks** (335 circle/persistence + 586 stave/exports) and **136 interface checks** (32 circle + 83 stave + 21 window/control), all passed. Core receipt: `exec-9F2DF95E9CB39EF2E9DBCC79AD0B7CEC`. GUI receipt: `exec-8CBCC99B74F36D7ACC7E0A66A8F10391`.
+
+Debug executable SHA-256: `f496484a8a0c2fb14180ce9886de9c66e2b4899eebe8c8305223fc455fa0ea61`. Core-test executable SHA-256: `5fe0fbf6a81040396cb1572a0f9260754c2bc3b9df4c709ea1486444c284d67d`. Native screenshots are retained in `build/validation-030-debug/`; the README screenshot is a Debug capture, not a Release runtime claim.
+
+Added tests exercise outside/count sliders, editor-slider physical unit invariants, expanded ranges, duplicate commit suppression, boundary preservation, three-column mounting rows, saved controls above inputs, compact height, explanation expansion and the central visible version. An initial test fixture retained Radius mode before old Diameter assertions; the fixture now explicitly establishes its mode. The final run above has zero failures.
+
+The full changed-input Debug audit has 32 workloads / 1,920 measured events, zero functional failures and one diagram raster rebuild per changed event. **29 of 32 workloads still miss the 16.67 ms p95 target**; see [Performance](PERFORMANCE.md). Do not interpret successful GUI tests as proof of 60 fps.
+
+**Release runtime boundary:** bin inspection still returns `PROTECTED_PATH` because its project-folder exclusion remains present. Execute busy is no longer the obstacle. The compiled Release has not been launched or hashed by this agent. Its `--self-test`, `--audit` and real-screen DPI/interaction checks remain outstanding; no permission bypass was used, and no saved user JSON was replaced.
+
+---
+
+> Historical 0.1 checkpoint. The native rendering/input refactor below supersedes the old SVG/cache assumptions; the original results remain history, not evidence for the current source.
+
+## 0.2 Native checkpoint — 13 October 2026
+
+The revised Debug application compiled and passed **103 GUI checks** (32 circle, 53 stave, 18 window/control). New cases cover 30/40/50/60 cm sizes, explicit suffixes, unit/radius switches with invalid fields, retained last-valid geometry, modifier-wheel steps and boundary stops. Run: `exec-11F1AFDEFAB860CB8747D380B4CDD147`; executable SHA-256 `fed3a4245732b9cceca43afb18bf5571657ac41ea79c9f8a90a1798014f04fd0`.
+
+The changed-input Debug audit had zero functional failures but **missed the 60-fps p95 target in all 24 workloads**. See [Performance](PERFORMANCE.md) for timings and the Release acceptance boundary. Do not reuse the unchanged-cache timing below as proof of responsiveness.
+
+At this checkpoint, a fresh core-test run and the 0.2 Release build remain pending. Execute reports `EXECUTE_BUSY`, while this project's retained jobs show completion. No other task was cancelled or a busy response treated as a successful build. The earlier bin executable and published commit are not the new refactor.
+
+---
+
 ## Build and runtime evidence
 
 Validated through Klick on DESKTOP-GFX1 using U++ 18468 and CLANGx64. The application is native; no browser component is used. This checkpoint covers the circle calculator, Drum staves tab, parallel spacer strips, axial allowances, local files and both themes.

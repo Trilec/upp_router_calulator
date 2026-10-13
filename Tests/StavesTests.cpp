@@ -85,10 +85,11 @@ int RunStaveTests()
     x=StaveInput();x.spacerThicknessMm=1000;check(!CalculateStaves(x).IsValid(),"strip consumes inner face");
     x=StaveInput();x.insideAllowanceMm=165;check(!CalculateStaves(x).IsValid(),"inside allowance consumes bore");
     for(int n:{0,1,2,513}){x=StaveInput();x.count=n;check(!CalculateStaves(x).IsValid(),"stave count range");}
-    for(double bad:{-1.0,10001.0,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}){
+    for(double bad:{-1.0,std::numeric_limits<double>::max(),std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}){
         x=StaveInput();x.depthMm=bad;check(!CalculateStaves(x).IsValid(),"invalid axial input");
         x=StaveInput();x.outerRadiusMm=bad;check(!CalculateStaves(x).IsValid(),"invalid radial input");
     }
+    for(double r:{150.0,200.0,250.0,300.0,10001.0}){x=StaveInput();x.outerRadiusMm=r;g=CalculateStaves(x);check(g.IsValid()&&Near(g.innerRadiusMm,r-10),"30 to 60 cm shells and beyond former size cap");}
     x=StaveInput();x.topTrimMm=x.bottomTrimMm=x.reachGapMm=x.basePlateMm=x.endKerfMm=0;g=CalculateStaves(x);
     check(g.IsValid()&&Near(g.blankLengthMm,x.depthMm)&&Near(g.finishedBottomZMm,0),"zero axial allowances");
     x=StaveInput();x.spacerThicknessMm=2;x.selectedJoints="2,8,20";g=CalculateStaves(x);

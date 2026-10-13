@@ -35,38 +35,4 @@ void StyleScroll(UiScrollPanel& scroll)
     UiScrollPanel::Style s=UiScrollPanel::StyleDefault();s.metrics.frame_enabled=false;s.metrics.radius=0;s.metrics.content_margin=Rect(0,0,0,0);s.metrics.shadow.enabled=false;
     scroll.SetCustomStyle(s).SetBaseColors(Bg(),Bg(),Ink(),0,0);
 }
-Image PanelImage(Size sz,const char* fill,const char* stroke,int radius)
-{
-    if(sz.cx<=0||sz.cy<=0)return Image();
-    ImageBuffer ib(sz);BufferPainter p(ib);RGBA clear;clear.r=clear.g=clear.b=clear.a=0;p.Clear(clear);
-    p.RoundedRectangle(.5,.5,sz.cx-1,sz.cy-1,DPI(radius)).Fill(ThemeColor(fill)).Stroke(1,ThemeColor(stroke));return Image(ib);
-}
-Image RenderSvgExact(Size sz,const String& authored)
-{
-    if(sz.cx<=0||sz.cy<=0||authored.IsEmpty())return Image();
-    String svg;
-    // One pass; only our own authored #RRGGBB tokens are theme-mapped.
-    for(int i=0;i<authored.GetCount();i++){
-        if(authored[i]=='#'&&i+7<=authored.GetCount()){String token=authored.Mid(i,7);svg<<Mapped(~token);i+=6;}else svg.Cat(authored[i]);
-    }
-    // The native SVG parser requires both corner radii explicitly.
-    for(int r:{3,7,8,10}){String a="rx=\""+AsString(r)+"\"";svg.Replace(a,a+" ry=\""+AsString(r)+"\"");}
-    Sizef intrinsic;Rectf vb;GetSVGDimensions(svg,intrinsic,vb);
-    if(IsNull(vb)&&!IsNull(intrinsic))vb=Rectf(0,0,intrinsic.cx,intrinsic.cy);
-    if(IsNull(vb)||vb.GetWidth()<=0||vb.GetHeight()<=0)return Image();
-    ImageBuffer ib(sz);BufferPainter p(ib);RGBA clear;clear.r=clear.g=clear.b=clear.a=0;p.Clear(clear);
-    double k=min(sz.cx/vb.GetWidth(),sz.cy/vb.GetHeight());
-    p.Translate((sz.cx-vb.GetWidth()*k)/2,(sz.cy-vb.GetHeight()*k)/2);p.Scale(k);p.Translate(-vb.left,-vb.top);
-    if(!RenderSVG(p,svg))return Image();return Image(ib);
-}
-void SvgView::Rebuild()
-{
-    Size sz=GetSize();int theme=IsDark()?1:0;
-    if(sz==rendered_size&&revision==rendered_revision&&theme==rendered_theme)return;
-    if(sz.cx<=0||sz.cy<=0)return;
-    image=RenderSvgExact(sz,source);rendered_size=sz;rendered_revision=revision;rendered_theme=theme;++render_count;Refresh();
-}
-void SvgView::SetSource(const String& s){if(s!=source){source=s;++revision;Rebuild();}}
-void SvgView::Layout(){Rebuild();}
-void SvgView::Paint(Draw& w){if(!IsNull(image))w.DrawImage(0,0,image);}
 } }

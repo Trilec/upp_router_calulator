@@ -15,7 +15,6 @@ Geometry Calculate(const Inputs& x)
     for(double n : a) {
         if(!std::isfinite(n) || IsNull(n)) { g.error = "Enter a finite number in all three measurement fields."; return g; }
         if(n <= 0) { g.error = "All measurements must be greater than zero."; return g; }
-        if(n > 10000) { g.error = "Input radii and diameters must not exceed 10,000 mm. Check the units."; return g; }
     }
     if(x.guideDiameterMm <= x.cutterDiameterMm) { g.error = "The circular guide must be larger than the cutter."; return g; }
     if(x.holeRadiusMm < x.cutterDiameterMm / 2) { g.error = "The finished hole cannot be smaller than the cutter."; return g; }
@@ -24,12 +23,13 @@ Geometry Calculate(const Inputs& x)
     g.bitR = x.cutterDiameterMm / 2;
     g.pathR = g.holeR - g.bitR;
     g.templateR = g.pathR + g.baseR;
+    if(!std::isfinite(g.templateR * 2)) g.error = "These dimensions exceed the numeric range.";
     return g;
 }
 String Number(double v)
 {
     if(!std::isfinite(v) || IsNull(v)) return "\xE2\x80\x94";
-    if(std::abs(v) < 1e-9) v = 0;
+    if(v != 0 && (std::abs(v) >= 1e8 || std::abs(v) < 1e-5)) return Format("%.8g", v);
     String s = Format("%.5f", v);
     while(s.EndsWith("0")) s.Trim(s.GetCount() - 1);
     if(s.EndsWith(".")) s.Trim(s.GetCount() - 1);
@@ -78,7 +78,7 @@ static bool Text(const Value& v, int maxlen, bool empty = false)
 }
 static bool Length(const Value& v)
 {
-    return IsNumber(v) && !v.Is<bool>() && !IsNull(v) && std::isfinite((double)v) && (double)v > 0 && (double)v <= 10000;
+    return IsNumber(v) && !v.Is<bool>() && !IsNull(v) && std::isfinite((double)v) && (double)v > 0;
 }
 static bool Choice(const Value& v, const char* a, const char* b)
 {
